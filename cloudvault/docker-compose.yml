@@ -1,0 +1,62 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cloudvault-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cloudvault
+      POSTGRES_PASSWORD: cloudvault
+      POSTGRES_DB: cloudvault
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cloudvault']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: cloudvault-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://cloudvault:cloudvault@postgres:5432/cloudvault?schema=public
+      JWT_ACCESS_SECRET: change-me-access-secret-change-me
+      JWT_REFRESH_SECRET: change-me-refresh-secret-change-me
+      ACCESS_TOKEN_EXPIRES_IN: 15m
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+      PORT: 4000
+      CLIENT_URL: http://localhost:5173
+      NODE_ENV: production
+      UPLOAD_DIRECTORY: uploads
+      MAX_FILE_SIZE: 104857600
+      DEFAULT_STORAGE_LIMIT: 5368709120
+    ports:
+      - '4000:4000'
+    volumes:
+      - uploads_data:/app/uploads
+    command: sh -c "npx prisma db push && node dist/server.js"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:4000/api
+    container_name: cloudvault-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '5173:5173'
+
+volumes:
+  postgres_data:
+  uploads_data:
